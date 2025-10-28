@@ -6,6 +6,8 @@ permissions:
 
 on:
   pull_request:
+    branches:
+      - main    # only run on PRs targeting main
     types: [opened, reopened, synchronize]
 
 jobs:

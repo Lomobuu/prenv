@@ -96,6 +96,7 @@ jobs:
   deploy-env-terraform:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     name: Deploy Terraform to Environment
     defaults:
       run:
@@ -127,11 +128,7 @@ jobs:
             -backend-config="use_oidc=true"
 
       - name: Terraform Plan
-        run: terraform plan -input=false \
-              -var "environment=${{ steps.env.outputs.environment }}" \
-              -var "location=$location"
+        run: terraform plan -input=false -var location=$location -var environment=$environment
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false \
-              -var "environment=${{ steps.env.outputs.environment }}" \
-              -var "location=$location"
+        run: terraform apply -auto-approve -input=false -var location=$location -var environment=$environment

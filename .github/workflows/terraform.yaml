@@ -85,6 +85,7 @@ jobs:
   deploy-env-terraform:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     name: Deploy Terraform to Environment
     env:
       environment: ${{ github.event.inputs.environment || 'dev' }}

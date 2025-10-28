@@ -45,4 +45,4 @@ az storage container create \
   --account-key "$ACCOUNT_KEY" \
   --output none
 
-echo "✅ Storage container '$CONTAINER_NAME' ready in storage account '$STORAGE_ACCOUNT'."
+echo "Storage container '$CONTAINER_NAME' ready in storage account '$STORAGE_ACCOUNT'."

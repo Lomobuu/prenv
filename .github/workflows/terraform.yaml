@@ -60,38 +60,7 @@ jobs:
     name: Deploy Terraform to PR
     env:
       environment: pr${{ github.event.pull_request.number }}
-      RESOURCE_GROUP: prenv-pr${{ github.event.pull_request.number }}-RG
-      STORAGE_ACCOUNT: tfstateprenvfozzen
-      location: westeurope
-    defaults:
-      run:
-        working-directory: .github/Terraform
-        shell: bash
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v1
-
-      - name: Terraform Init
-        run: terraform init \
-              -backend-config="resource_group_name=$RESOURCE_GROUP" \
-              -backend-config="storage_account_name=$STORAGE_ACCOUNT" \
-              -backend-config="container_name=tfstate-$environment" \
-              -backend-config="key=terraform.tfstate" \
-              -backend-config="use_oidc=true"
-
-      - name: Terraform Plan
-        run: terraform plan -input=false -var location=$location -var environment=$environment
-
-  deploy-env-terraform:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    name: Deploy Terraform to Environment
-    env:
-      environment: ${{ github.event.inputs.environment || 'dev' }}
-      RESOURCE_GROUP: prenv-${{ github.event.inputs.environment || 'dev' }}-RG
+      RESOURCE_GROUP: prenv-management-RG
       STORAGE_ACCOUNT: tfstateprenvfozzen
       location: westeurope
     defaults:
@@ -113,3 +82,34 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false -var location=$location -var environment=$environment
+
+
+  deploy-env-terraform:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    name: Deploy Terraform to Environment
+    env:
+      environment: ${{ github.event.inputs.environment || 'dev' }}
+      RESOURCE_GROUP: prenv-management-RG
+      STORAGE_ACCOUNT: tfstateprenvfozzen
+      location: westeurope
+    defaults:
+      run:
+        working-directory: .github/Terraform
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Init
+        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=$STORAGE_ACCOUNT" -backend-config="container_name=tfstate-$environment" -backend-config="key=terraform.tfstate" -backend-config="use_oidc=true"
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -var location=$location -var environment=$environment
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false -var location=$location -var environment=$environment
+

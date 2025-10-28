@@ -68,17 +68,12 @@ jobs:
       - name: Ensure storage container exists
         run: |
           echo "Checking if container exists in $STORAGE_ACCOUNT..."
-          ACCOUNT_KEY=$(az storage account keys list \
-            --resource-group "$RESOURCE_GROUP" \
-            --account-name "$STORAGE_ACCOUNT" \
-            --query "[0].value" -o tsv)
-
           CONTAINER_NAME=${{ steps.env.outputs.container_name }}
 
           EXISTS=$(az storage container exists \
             --name "$CONTAINER_NAME" \
             --account-name "$STORAGE_ACCOUNT" \
-            --account-key "$ACCOUNT_KEY" \
+            --auth-mode login \
             --query "exists" -o tsv)
 
           if [ "$EXISTS" = "true" ]; then
@@ -88,10 +83,11 @@ jobs:
             az storage container create \
               --name "$CONTAINER_NAME" \
               --account-name "$STORAGE_ACCOUNT" \
-              --account-key "$ACCOUNT_KEY" \
+              --auth-mode login \
               --output none
             echo "Created container '$CONTAINER_NAME'."
           fi
+
 
       - name: Terraform Init
         run: |

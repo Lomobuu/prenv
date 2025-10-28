@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - dev
+      - test
+      - main
   pull_request:
     branches:
-      - main    # only run on PRs targeting main
+      - main    # only PRs to main
     types: [opened, reopened, synchronize]
   workflow_dispatch:
     inputs:
@@ -32,7 +34,28 @@ env:
   STORAGE_ACCOUNT: tfstateprenvfozzen
 
 jobs:
+  setup-pr-backend:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      container_name: ${{ steps.bootstrap.outputs.container_name }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run PR backend bootstrap
+        id: bootstrap
+        run: bash .github/workflows/bootstrap-pr.sh ${{ github.event.pull_request.number }}
+
   terraform:
+    needs: [setup-pr-backend]
     name: Deploy Terraform
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
@@ -48,12 +71,12 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
 
-      - name: Determine environment & container
+      - name: Determine environment & backend container
         id: env
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             ENVIRONMENT="pr${{ github.event.pull_request.number }}"
-            CONTAINER_NAME="tfstate-${ENVIRONMENT}"
+            CONTAINER_NAME="${{ needs.setup-pr-backend.outputs.container_name }}"
           else
             ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
             CONTAINER_NAME="tfstate-$(echo "$ENVIRONMENT" | tr '[:upper:]' '[:lower:]')"
@@ -65,35 +88,11 @@ jobs:
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
 
-      - name: Ensure storage container exists
-        run: |
-          echo "Checking if container exists in $STORAGE_ACCOUNT..."
-          CONTAINER_NAME=${{ steps.env.outputs.container_name }}
-
-          EXISTS=$(az storage container exists \
-            --name "$CONTAINER_NAME" \
-            --account-name "$STORAGE_ACCOUNT" \
-            --auth-mode login \
-            --query "exists" -o tsv)
-
-          if [ "$EXISTS" = "true" ]; then
-            echo "Container '$CONTAINER_NAME' already exists."
-          else
-            echo "Creating container '$CONTAINER_NAME'..."
-            az storage container create \
-              --name "$CONTAINER_NAME" \
-              --account-name "$STORAGE_ACCOUNT" \
-              --auth-mode login \
-              --output none
-            echo "Created container '$CONTAINER_NAME'."
-          fi
-
-
       - name: Terraform Init
         run: |
           terraform init \
-            -backend-config="resource_group_name=prenv-management-RG" \
-            -backend-config="storage_account_name=tfstateprenvfozzen" \
+            -backend-config="resource_group_name=$RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$STORAGE_ACCOUNT" \
             -backend-config="container_name=${{ steps.env.outputs.container_name }}" \
             -backend-config="key=terraform.tfstate" \
             -backend-config="use_oidc=true"
@@ -105,7 +104,12 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -input=false -var location=$location -var environment=${{ steps.env.outputs.environment }}
+        run: terraform plan -input=false \
+              -var "environment=${{ steps.env.outputs.environment }}" \
+              -var "location=$location"
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false -var location=$location -var environment=${{ steps.env.outputs.environment }}
+        if: github.event_name != 'pull_request'
+        run: terraform apply -auto-approve -input=false \
+              -var "environment=${{ steps.env.outputs.environment }}" \
+              -var "location=$location"

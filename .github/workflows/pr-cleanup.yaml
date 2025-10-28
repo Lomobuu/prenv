@@ -43,7 +43,12 @@ jobs:
       - name: Delete PR container
         run: |
           echo "Deleting container: $BACKEND_CONTAINER"
+          ACCOUNT_KEY=$(az storage account keys list \
+            --resource-group "$RESOURCE_GROUP" \
+            --account-name "$STORAGE_ACCOUNT" \
+            --query "[0].value" -o tsv)
+
           az storage container delete \
             --name "$BACKEND_CONTAINER" \
             --account-name "$STORAGE_ACCOUNT" \
-            --auth-mode login
+            --account-key "$ACCOUNT_KEY" || true

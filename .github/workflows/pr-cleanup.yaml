@@ -17,9 +17,12 @@ jobs:
       environment: pr${{ github.event.pull_request.number }}
       RESOURCE_GROUP: prenv-management-RG
       STORAGE_ACCOUNT: tfstateprenvfozzen
-      LOCATION: westeurope
+      location: westeurope
       PR_ID: ${{ github.event.pull_request.number }}
       BACKEND_CONTAINER: tfstate-pr${{ github.event.pull_request.number }}
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
     defaults:
       run:
         working-directory: .github/Terraform
@@ -27,13 +30,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1

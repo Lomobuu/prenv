@@ -28,6 +28,8 @@ env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: prenv-management-RG
+  STORAGE_ACCOUNT: tfstateprenvfozzen
 
 jobs:
   terraform:
@@ -62,6 +64,34 @@ jobs:
 
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
+
+      - name: Ensure storage container exists
+        run: |
+          echo "Checking if container exists in $STORAGE_ACCOUNT..."
+          ACCOUNT_KEY=$(az storage account keys list \
+            --resource-group "$RESOURCE_GROUP" \
+            --account-name "$STORAGE_ACCOUNT" \
+            --query "[0].value" -o tsv)
+
+          CONTAINER_NAME=${{ steps.env.outputs.container_name }}
+
+          EXISTS=$(az storage container exists \
+            --name "$CONTAINER_NAME" \
+            --account-name "$STORAGE_ACCOUNT" \
+            --account-key "$ACCOUNT_KEY" \
+            --query "exists" -o tsv)
+
+          if [ "$EXISTS" = "true" ]; then
+            echo "Container '$CONTAINER_NAME' already exists."
+          else
+            echo "Creating container '$CONTAINER_NAME'..."
+            az storage container create \
+              --name "$CONTAINER_NAME" \
+              --account-name "$STORAGE_ACCOUNT" \
+              --account-key "$ACCOUNT_KEY" \
+              --output none
+            echo "Created container '$CONTAINER_NAME'."
+          fi
 
       - name: Terraform Init
         run: |

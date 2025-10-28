@@ -29,6 +29,7 @@ provider "azurerm" {
 data "azurerm_client_config" "ServicePrincipal" {
 }
 
-data "azurerm_resource_group" "rg" {
+resource "azurerm_resource_group" "rg" {
   name = "prenv-${var.environment}-RG"
+  location = var.location
 }

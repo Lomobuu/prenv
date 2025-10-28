@@ -20,8 +20,12 @@ jobs:
       LOCATION: westeurope
       PR_ID: ${{ github.event.pull_request.number }}
       BACKEND_CONTAINER: tfstate-pr${{ github.event.pull_request.number }}
+    defaults:
+      run:
+        working-directory: .github/Terraform
+        shell: bash
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Azure Login

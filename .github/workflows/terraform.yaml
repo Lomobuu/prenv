@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - dev
+      - test
+      - main
   pull_request:
     branches:
-      - main    # only run on PRs targeting main
+      - main
     types: [opened, reopened, synchronize]
   workflow_dispatch:
     inputs:
@@ -28,17 +30,43 @@ env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  STORAGE_ACCOUNT: tfstateprenvfozzen
 
 jobs:
-  terraform:
-    name: Deploy Terraform
+  setup-pr-backend:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    outputs:
+      container_name: ${{ steps.bootstrap.outputs.container_name }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run PR backend bootstrap
+        id: bootstrap
+        run: bash .github/workflows/bootstrap-pr.sh ${{ github.event.pull_request.number }}
+
+  deploy-pr-terraform:
+    if: github.event_name == 'pull_request'
+    needs: [setup-pr-backend]
+    runs-on: ubuntu-latest
+    name: Deploy Terraform to PR
+    env:
+      environment: pr${{ github.event.pull_request.number }}
+      RESOURCE_GROUP: prenv-management-RG
+      STORAGE_ACCOUNT: tfstateprenvfozzen
+      location: westeurope
     defaults:
       run:
         working-directory: .github/Terraform
         shell: bash
-
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -46,40 +74,42 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
 
-      - name: Determine environment & container
-        id: env
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            ENVIRONMENT="pr${{ github.event.pull_request.number }}"
-            CONTAINER_NAME="tfstate-${ENVIRONMENT}"
-          else
-            ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-            CONTAINER_NAME="tfstate-$(echo "$ENVIRONMENT" | tr '[:upper:]' '[:lower:]')"
-          fi
-
-          echo "Environment: $ENVIRONMENT"
-          echo "Container: $CONTAINER_NAME"
-
-          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
-
       - name: Terraform Init
-        run: |
-          terraform init \
-            -backend-config="resource_group_name=prenv-management-RG" \
-            -backend-config="storage_account_name=tfstateprenvfozzen" \
-            -backend-config="container_name=${{ steps.env.outputs.container_name }}" \
-            -backend-config="key=terraform.tfstate" \
-            -backend-config="use_oidc=true"
-
-      - name: Terraform Format
-        run: terraform fmt -recursive
-
-      - name: Terraform Validate
-        run: terraform validate
+        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=$STORAGE_ACCOUNT" -backend-config="container_name=tfstate-$environment" -backend-config="key=terraform.tfstate" -backend-config="use_oidc=true"
 
       - name: Terraform Plan
-        run: terraform plan -input=false -var location=$location -var environment=${{ steps.env.outputs.environment }}
+        run: terraform plan -input=false -var location=$location -var environment=$environment
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false -var location=$location -var environment=${{ steps.env.outputs.environment }}
+        run: terraform apply -auto-approve -input=false -var location=$location -var environment=$environment
+
+
+  deploy-env-terraform:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    name: Deploy Terraform to Environment
+    env:
+      environment: ${{ github.event.inputs.environment || 'dev' }}
+      RESOURCE_GROUP: prenv-management-RG
+      STORAGE_ACCOUNT: tfstateprenvfozzen
+      location: westeurope
+    defaults:
+      run:
+        working-directory: .github/Terraform
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Init
+        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=$STORAGE_ACCOUNT" -backend-config="container_name=tfstate-$environment" -backend-config="key=terraform.tfstate" -backend-config="use_oidc=true"
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -var location=$location -var environment=$environment
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false -var location=$location -var environment=$environment
+

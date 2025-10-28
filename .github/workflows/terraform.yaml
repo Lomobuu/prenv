@@ -8,7 +8,7 @@ on:
       - main
   pull_request:
     branches:
-      - main    # only PRs to main
+      - main
     types: [opened, reopened, synchronize]
   workflow_dispatch:
     inputs:
@@ -54,16 +54,15 @@ jobs:
         id: bootstrap
         run: bash .github/workflows/bootstrap-pr.sh ${{ github.event.pull_request.number }}
 
-  terraform:
+  deploy-pr-terraform:
+    if: github.event_name == 'pull_request'
     needs: [setup-pr-backend]
-    name: Deploy Terraform
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    name: Deploy Terraform to PR
     defaults:
       run:
         working-directory: .github/Terraform
         shell: bash
-
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -74,16 +73,8 @@ jobs:
       - name: Determine environment & backend container
         id: env
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            ENVIRONMENT="pr${{ github.event.pull_request.number }}"
-            CONTAINER_NAME="${{ needs.setup-pr-backend.outputs.container_name }}"
-          else
-            ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-            CONTAINER_NAME="tfstate-$(echo "$ENVIRONMENT" | tr '[:upper:]' '[:lower:]')"
-          fi
-
-          echo "Environment: $ENVIRONMENT"
-          echo "Container: $CONTAINER_NAME"
+          ENVIRONMENT="pr${{ github.event.pull_request.number }}"
+          CONTAINER_NAME="${{ needs.setup-pr-backend.outputs.container_name }}"
 
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
@@ -97,11 +88,43 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="use_oidc=true"
 
-      - name: Terraform Format
-        run: terraform fmt -recursive
+      - name: Terraform Plan
+        run: terraform plan -input=false \
+              -var "environment=${{ steps.env.outputs.environment }}" \
+              -var "location=$location"
 
-      - name: Terraform Validate
-        run: terraform validate
+  deploy-env-terraform:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    name: Deploy Terraform to Environment
+    defaults:
+      run:
+        working-directory: .github/Terraform
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Determine environment & backend container
+        id: env
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          CONTAINER_NAME="tfstate-$(echo "$ENVIRONMENT" | tr '[:upper:]' '[:lower:]')"
+
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=$RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$STORAGE_ACCOUNT" \
+            -backend-config="container_name=${{ steps.env.outputs.container_name }}" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="use_oidc=true"
 
       - name: Terraform Plan
         run: terraform plan -input=false \
@@ -109,7 +132,6 @@ jobs:
               -var "location=$location"
 
       - name: Terraform Apply
-        if: github.event_name != 'pull_request'
         run: terraform apply -auto-approve -input=false \
               -var "environment=${{ steps.env.outputs.environment }}" \
               -var "location=$location"

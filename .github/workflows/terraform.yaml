@@ -33,6 +33,7 @@ jobs:
   terraform:
     name: Deploy Terraform
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
         working-directory: .github/Terraform
